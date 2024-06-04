@@ -34,4 +34,4 @@ override.tf.json
 terraform.rc
 
 # Ignore further changes to main shell config file
-shell/config.ini
+# shell/config.ini
