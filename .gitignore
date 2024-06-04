@@ -35,3 +35,7 @@ terraform.rc
 
 # Ignore shell config file
 shell/config.ini
+
+# Ignore contents of input folder
+shell/input_files/*
+!shell/input_files/.gitkeep
