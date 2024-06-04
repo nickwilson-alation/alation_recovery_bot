@@ -27,7 +27,7 @@ verify_terraform() {
 }
 
 # Load config file and section
-CONFIG_FILE="config.ini"
+CONFIG_FILE="shell/config.ini"
 SECTION="default"
 while getopts ":c:s:h" opt; do
   case $opt in
