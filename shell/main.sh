@@ -5,16 +5,10 @@ display_help() {
   echo "Usage: $0 [OPTIONS] <command>"
   echo "Commands:"
   echo "  recover                               Recovers an Alation instance from backup"
-  echo "    -l <log_level>                      Sets log level (info, warning, debug)"
-  echo "    -l <log_level>                      Sets log level (info, warning, debug)"
-  echo "    -r <rpm_file>                       Path to the Alation installer rpm file"
-  echo "    -i <license_file>                   Path to the Alation license file"
-  echo "    -b <backup_file>                    Path to the Alation backup file"
-  echo "    -e <eb_backup_file>                 Path to the Alation event bus backup file"
   echo "  destroy                               Destroys a previously recovered Alation instance and EC2"
-  echo "    -l <log_level>                      Sets log level (info, warning, debug)"
-  echo "    -n <unique_environment_name>        Unique name of the environment to be destroyed"
   echo "Options:"
+  echo "  -c <config_file>                      Path to configuration file"
+  echo "  -s <section>                          Section in the configuration file"
   echo "  -h                                    Display this help message"
 }
 
@@ -32,40 +26,16 @@ verify_terraform() {
   terraform -v
 }
 
-# Check that a proper command is provided as first arg
-if [ -z "$1" ] || [ "$1" != "recover" ] || [ "$1" != "destroy" ]; then
-  echo "Invalid command: $1"
-  display_help
-  exit 1
-fi
-
-command=$1
-shift
-
-# Default values for args
-log_level="warning"
-rpm_file=""
-license_file=""
-backup_file=""
-eb_backup_file=""
-
-# Parse command-line options and arguments
-while getopts ":l:r:i:b:e:n" opt; do
+# Load config file and section
+CONFIG_FILE="config.ini"
+SECTION="default"
+while getopts ":c:s:h" opt; do
   case $opt in
-    l)
-      log_level="$OPTARG"
+    c)
+      CONFIG_FILE="$OPTARG"
       ;;
-    r)
-      rpm_file="$OPTARG"
-      ;;
-    i)
-      license_file="$OPTARG"
-      ;;
-    b)
-      backup_file="$OPTARG"
-      ;;
-    e)
-      eb_backup_file="$OPTARG"
+    s)
+      SECTION="$OPTARG"
       ;;
     h)
       display_help
@@ -79,23 +49,75 @@ while getopts ":l:r:i:b:e:n" opt; do
   esac
 done
 
+if [ ! -f "$CONFIG_FILE" ]; then
+  echo "Configuration file not found: $CONFIG_FILE"
+  display_help
+  exit 1
+fi
+
+# Source configuration file
+source <(awk -F= -v section="$SECTION" '
+  /^\[/{current_section = $1}
+  current_section == "[" section "]" && /^[^#].*=.*$/ {
+    gsub(/^[ \t]+|[ \t]+$/, "", $2);
+    print $1 "=\"" $2 "\""
+  }' $CONFIG_FILE)
+
+# Prompt for email
+read -p "Enter owner email address: " owner_email_address
+echo
+
+# Prompt for password
+read -s -p "Enter owner password: " owner_password
+echo
+
+# Check that a proper command is provided as first arg
+if [ -z "$1" ] || { [ "$1" != "recover" ] && [ "$1" != "destroy" ]; }; then
+  echo "Invalid command: $1"
+  display_help
+  exit 1
+fi
+
+command=$1
+shift
+
 verify_terraform
 
 case $command in
   recover)
     # Check required arguments for 'recover' command
-    if [ -z "$rpm_file" ] || [ -z "$license_file" ] || [ -z "$backup_file" ] || [ -z "$eb_backup_file" ]; then
+    if [ -z "$rpm_file" ] || [ -z "$license_file" ] || [ -z "$backup_file" ] || [ -z "$eb_backup_file" ] || [ -z "$unique_environment_name" ] || [ -z "$owner_email_address" ] || [ -z "$owner_password" ] || [ -z "$region" ] || [ -z "$base_url" ] || [ -z "$ec2_root_size" ] || [ -z "$ec2_data_size" ] || [ -z "$ec2_backup_size" ] || [ -z "$ec2_ami" ] || [ -z "$ec2_itype" ]; then
       echo "Error: Missing required argument(s) for 'recover' command."
       display_help
       exit 1
     fi
-    # # Check if the email ends with @alation.com
-    # if [[ "$alation_owner_email_address" != *@alation.com ]]; then
-    #   echo "Error: Alation owner email address must be an Alation address (must end in '@alation.com')"
-    #   exit 1
-    # fi
-    # do_create
-    # ;;
+    echo "Recovering Alation instance..."
+    terraform apply -var "log_level=$log_level" \
+                    -var "rpm_file=$rpm_file" \
+                    -var "license_file=$license_file" \
+                    -var "backup_file=$backup_file" \
+                    -var "eb_backup_file=$eb_backup_file" \
+                    -var "unique_environment_name=$unique_environment_name" \
+                    -var "owner_email_address=$owner_email_address" \
+                    -var "owner_password=$owner_password" \
+                    -var "region=$region" \
+                    -var "base_url=$base_url" \
+                    -var "ec2_root_size=$ec2_root_size" \
+                    -var "ec2_data_size=$ec2_data_size" \
+                    -var "ec2_backup_size=$ec2_backup_size" \
+                    -var "ec2_ami=$ec2_ami" \
+                    -var "ec2_itype=$ec2_itype"
+    ;;
+  destroy)
+    # Check required arguments for 'destroy' command
+    if [ -z "$unique_environment_name" ]; then
+      echo "Error: Missing required argument(s) for 'destroy' command."
+      display_help
+      exit 1
+    fi
+    echo "Destroying Alation instance..."
+    terraform destroy -var "unique_environment_name=$unique_environment_name"
+    ;;
   *)
     echo "Error: Invalid command: $command"
     display_help
